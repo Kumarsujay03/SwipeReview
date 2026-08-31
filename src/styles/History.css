@@ -1,0 +1,267 @@
+.history-container {
+    padding: 20px;
+    height: 100%;
+    overflow-y: auto;
+    background: transparent;
+}
+
+.history-list {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+    max-width: 600px;
+    margin: 0 auto;
+}
+
+.history-item {
+    background: white;
+    border-radius: 12px;
+    padding: 15px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    transition: transform 0.2s, box-shadow 0.2s;
+    cursor: pointer;
+}
+
+.history-item:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.history-item.approved {
+    border-left: 4px solid #fd297b;
+}
+
+.history-item.rejected {
+    border-left: 4px solid #ff4b4b;
+}
+
+.history-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+}
+
+.status-badge {
+    font-size: 12px;
+    font-weight: 600;
+    padding: 4px 10px;
+    border-radius: 12px;
+    background: #f0f0f0;
+    color: #666;
+}
+
+.history-item.approved .status-badge {
+    background: #ffe0f0;
+    color: #fd297b;
+}
+
+.history-item.rejected .status-badge {
+    background: #ffe5e5;
+    color: #ff4b4b;
+}
+
+.date {
+    font-size: 12px;
+    color: #999;
+}
+
+.history-title {
+    margin: 0 0 8px 0;
+    font-size: 16px;
+    font-weight: 600;
+    color: #333;
+}
+
+.history-content {
+    margin: 0 0 10px 0;
+    color: #666;
+    line-height: 1.5;
+    font-size: 14px;
+}
+
+.history-comment {
+    font-size: 13px;
+    color: #2196f3;
+    background: #e3f2fd;
+    padding: 8px;
+    border-radius: 6px;
+    margin-top: 10px;
+}
+
+.loading,
+.empty-state {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    font-size: 18px;
+    color: white;
+    font-weight: 500;
+}
+
+/* Modal Styles */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    padding: 20px;
+}
+
+.modal-content {
+    background: white;
+    border-radius: 16px;
+    width: 100%;
+    max-width: 500px;
+    max-height: 80vh;
+    overflow-y: auto;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 20px 20px 15px;
+    border-bottom: 1px solid #eee;
+}
+
+.modal-header h3 {
+    margin: 0;
+    font-size: 20px;
+    color: #333;
+    flex: 1;
+}
+
+.close-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: #999;
+    padding: 5px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    transition: background 0.2s;
+}
+
+.close-btn:hover {
+    background: #f5f5f5;
+}
+
+.modal-body {
+    padding: 20px;
+}
+
+.full-content {
+    margin: 0 0 20px 0;
+    line-height: 1.6;
+    color: #555;
+    font-size: 15px;
+}
+
+.status-section {
+    margin: 20px 0;
+}
+
+.status-section label {
+    display: block;
+    margin-bottom: 10px;
+    font-weight: 600;
+    color: #333;
+}
+
+.status-buttons {
+    display: flex;
+    gap: 10px;
+}
+
+.status-btn {
+    flex: 1;
+    padding: 12px;
+    border: 2px solid #ddd;
+    border-radius: 8px;
+    background: white;
+    cursor: pointer;
+    font-weight: 600;
+    transition: all 0.2s;
+}
+
+.status-btn.approve {
+    color: #fd297b;
+}
+
+.status-btn.approve.active {
+    background: #fd297b;
+    color: white;
+    border-color: #fd297b;
+}
+
+.status-btn.reject {
+    color: #ff4b4b;
+}
+
+.status-btn.reject.active {
+    background: #ff4b4b;
+    color: white;
+    border-color: #ff4b4b;
+}
+
+.existing-comment {
+    background: #f9f9f9;
+    padding: 12px;
+    border-radius: 8px;
+    margin-top: 15px;
+}
+
+.existing-comment strong {
+    display: block;
+    margin-bottom: 5px;
+    color: #333;
+}
+
+.existing-comment p {
+    margin: 0;
+    color: #666;
+    font-size: 14px;
+}
+
+.modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    padding: 15px 20px 20px;
+    border-top: 1px solid #eee;
+}
+
+.modal-actions button {
+    padding: 10px 20px;
+    border: none;
+    border-radius: 8px;
+    background: #f5f5f5;
+    color: #333;
+    cursor: pointer;
+    font-weight: 600;
+    transition: background 0.2s;
+}
+
+.modal-actions button:hover {
+    background: #e0e0e0;
+}
+
+.modal-actions button.primary {
+    background: linear-gradient(135deg, #fd297b 0%, #ff655b 100%);
+    color: white;
+}
+
+.modal-actions button.primary:hover {
+    background: linear-gradient(135deg, #e91e6a 0%, #ff5449 100%);
+}
