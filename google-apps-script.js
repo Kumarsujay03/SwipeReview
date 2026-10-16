@@ -130,11 +130,163 @@ function handleUpdate(sheet, params) {
 }
 
 /**
- * Handle POST requests - Not used due to CORS limitations
- * Keeping for reference
+ * Handle POST requests - used only for login, so the password travels in the
+ * request body instead of the URL. The frontend sends the body as text/plain
+ * to avoid a CORS preflight.
+ * @param {Object} e - Event object containing the POST body
+ * @returns {TextOutput} JSON response
  */
 function doPost(e) {
-    return ContentService.createTextOutput(JSON.stringify({
-        error: 'POST not supported. Use GET with action=update parameter instead.'
-    })).setMimeType(ContentService.MimeType.JSON);
+    let body = {};
+    try {
+        body = JSON.parse((e && e.postData && e.postData.contents) || '{}');
+    } catch (err) {
+        return jsonResponse({ error: 'Invalid JSON body' });
+    }
+
+    if (body.action === 'login') {
+        return handleLogin(body);
+    }
+
+    return jsonResponse({ error: 'Unsupported action' });
+}
+
+// ---------------------------------------------------------------------------
+// Reviewer login
+//
+// Reviewers live in a sheet tab named "Users" with the columns:
+//   Name | Email | Salt | PasswordHash
+// Passwords are never stored: only a random salt and an iterated, salted
+// SHA-256 hash. Use the "SwipeReview > Add / update reviewer" menu in the
+// spreadsheet to create or change a reviewer (see SHEETS_SETUP.md).
+// ---------------------------------------------------------------------------
+
+const USERS_SHEET_NAME = 'Users';
+const HASH_ITERATIONS = 1000;
+
+/**
+ * Verify a reviewer's email and password against the Users sheet
+ * @param {Object} body - { email, password }
+ * @returns {TextOutput} JSON response with { success, user } or { error }
+ */
+function handleLogin(body) {
+    const email = String(body.email || '').trim().toLowerCase();
+    const password = String(body.password || '');
+
+    if (!email || !password) {
+        return jsonResponse({ error: 'Missing email or password' });
+    }
+
+    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(USERS_SHEET_NAME);
+    if (!sheet) {
+        return jsonResponse({ error: 'Sheet "' + USERS_SHEET_NAME + '" not found' });
+    }
+
+    const rows = sheet.getDataRange().getValues().slice(1); // skip header
+    const row = rows.find(r => String(r[1]).trim().toLowerCase() === email);
+
+    // Hash even when the email is unknown so timing doesn't reveal valid emails
+    const salt = row ? String(row[2]) : 'unknown-user';
+    const expected = row ? String(row[3]) : '';
+    const actual = hashPassword(password, salt);
+
+    if (!row || !expected || !constantTimeEquals(actual, expected)) {
+        return jsonResponse({ error: 'Invalid credentials' });
+    }
+
+    return jsonResponse({
+        success: true,
+        user: { name: String(row[0]), email: email }
+    });
+}
+
+/**
+ * Iterated, salted SHA-256 hash as a hex string
+ * @param {string} password
+ * @param {string} salt
+ * @returns {string}
+ */
+function hashPassword(password, salt) {
+    let hash = toHex(Utilities.computeDigest(
+        Utilities.DigestAlgorithm.SHA_256, salt + password, Utilities.Charset.UTF_8));
+    for (let i = 1; i < HASH_ITERATIONS; i++) {
+        hash = toHex(Utilities.computeDigest(
+            Utilities.DigestAlgorithm.SHA_256, salt + hash, Utilities.Charset.UTF_8));
+    }
+    return hash;
+}
+
+function toHex(bytes) {
+    return bytes.map(b => ('0' + (b & 0xff).toString(16)).slice(-2)).join('');
+}
+
+function constantTimeEquals(a, b) {
+    if (a.length !== b.length) return false;
+    let diff = 0;
+    for (let i = 0; i < a.length; i++) {
+        diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+    }
+    return diff === 0;
+}
+
+function jsonResponse(obj) {
+    return ContentService.createTextOutput(JSON.stringify(obj))
+        .setMimeType(ContentService.MimeType.JSON);
+}
+
+/**
+ * Adds a "SwipeReview" menu to the spreadsheet for managing reviewers
+ */
+function onOpen() {
+    SpreadsheetApp.getUi()
+        .createMenu('SwipeReview')
+        .addItem('Add / update reviewer', 'addOrUpdateReviewer')
+        .addToUi();
+}
+
+/**
+ * Prompts for a reviewer's name, email and password, then stores the name,
+ * email, a fresh random salt and the password hash in the Users sheet.
+ * The plaintext password is never written anywhere.
+ */
+function addOrUpdateReviewer() {
+    const ui = SpreadsheetApp.getUi();
+
+    const ask = (prompt) => {
+        const res = ui.prompt('SwipeReview', prompt, ui.ButtonSet.OK_CANCEL);
+        return res.getSelectedButton() === ui.Button.OK ? res.getResponseText().trim() : null;
+    };
+
+    const name = ask('Reviewer name:');
+    if (!name) return;
+    const email = (ask('Reviewer email:') || '').toLowerCase();
+    if (!email) return;
+    const password = ask('New password (at least 10 characters):');
+    if (!password) return;
+    if (password.length < 10) {
+        ui.alert('Password must be at least 10 characters. Nothing was saved.');
+        return;
+    }
+
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    let sheet = ss.getSheetByName(USERS_SHEET_NAME);
+    if (!sheet) {
+        sheet = ss.insertSheet(USERS_SHEET_NAME);
+        sheet.appendRow(['Name', 'Email', 'Salt', 'PasswordHash']);
+    }
+
+    const salt = Utilities.getUuid();
+    const hash = hashPassword(password, salt);
+
+    const data = sheet.getDataRange().getValues();
+    for (let i = 1; i < data.length; i++) {
+        if (String(data[i][1]).trim().toLowerCase() === email) {
+            sheet.getRange(i + 1, 1, 1, 4).setValues([[name, email, salt, hash]]);
+            ui.alert('Updated reviewer ' + email);
+            return;
+        }
+    }
+
+    sheet.appendRow([name, email, salt, hash]);
+    ui.alert('Added reviewer ' + email);
 }

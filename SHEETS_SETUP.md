@@ -8,6 +8,8 @@ This guide will help you set up the Google Apps Script backend for your LinkedIn
 📊 Content_calender (Your Google Spreadsheet)
    └── 📄 Linkedin (Sheet tab inside the spreadsheet)
        └── Columns: ID | Title | Content | Date | Status | Comment
+   └── 📄 Users (Reviewer accounts, created by the script menu)
+       └── Columns: Name | Email | Salt | PasswordHash
 ```
 
 > **Important:** 
@@ -91,7 +93,23 @@ This guide will help you set up the Google Apps Script backend for your LinkedIn
 
 > **Note:** The script uses `getActiveSpreadsheet()` which means it automatically works with the spreadsheet it's attached to ("Content_calender" in your case). It then looks for the "Linkedin" sheet tab inside that spreadsheet.
 
-## Step 4: Test the API
+## Step 4: Add Reviewers
+
+Reviewers sign in with an email and password that the Apps Script checks against a **Users** tab. Passwords are never stored, only a random salt and a salted, iterated SHA-256 hash.
+
+1. Reload your spreadsheet. A **SwipeReview** menu appears in the menu bar (added by the script's `onOpen` function).
+2. Click **SwipeReview** > **Add / update reviewer**. The first time, Google asks you to authorize the script.
+3. Enter the reviewer's name, email and a password of at least 10 characters.
+4. The script creates the **Users** tab if needed and writes `Name | Email | Salt | PasswordHash`. Running it again for an existing email replaces that reviewer's password.
+
+Repeat for each reviewer, then share each password with its reviewer through a private channel.
+
+> **Notes**
+> - To remove a reviewer, delete their row in the **Users** tab.
+> - Anyone with access to the spreadsheet can see the hashes, so only share the spreadsheet with people you trust. Don't edit the Salt or PasswordHash cells by hand.
+> - If you changed the script, redeploy it (see "Updating the Script") so the web app picks up the `login` action.
+
+## Step 5: Test the API
 
 ### Test GET Request (Fetch Pending Items)
 
@@ -121,37 +139,42 @@ https://script.google.com/macros/s/YOUR_SCRIPT_ID/exec?history=true
 
 This should return an empty array `{"data": []}` if you haven't processed any items yet.
 
-### Test POST Request (Update Status)
+### Test Update Request
 
-You can test this using a tool like Postman or curl:
+Status updates are sent as GET requests with `action=update`:
 
-```bash
-curl -X POST "YOUR_WEB_APP_URL" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "id": 1,
-    "status": "Approved",
-    "user": {"name": "John Doe"},
-    "comment": "Great content!"
-  }'
+```
+https://script.google.com/macros/s/YOUR_SCRIPT_ID/exec?action=update&id=1&status=Approved&userName=John%20Doe&comment=Great%20content!
 ```
 
-After this, check your Google Sheet - Row 1 should now have:
+After this, check your Google Sheet - the row with ID 1 should now have:
 - Status: "Approved by John Doe"
 - Comment: "Great content!"
 
-## Step 5: Configure Your Frontend
+### Test Login
 
-1. Open `src/services/sheets.js` in your project
-2. Replace the `API_URL` constant with your Web App URL:
+Login is a POST request so the password stays out of the URL. Replace the email and password with a reviewer you added in Step 4 (run this only on your own machine, since the password ends up in your shell history):
 
-```javascript
-const API_URL = 'https://script.google.com/macros/s/YOUR_SCRIPT_ID/exec';
+```bash
+curl -L "YOUR_WEB_APP_URL" -H "Content-Type: text/plain" -d '{"action":"login","email":"reviewer@example.com","password":"..."}'
 ```
 
-3. Save the file
+A correct password returns `{"success":true,"user":{...}}`; anything else returns `{"error":"Invalid credentials"}`.
 
-## Step 6: Run Your Application
+## Step 6: Configure Your Frontend
+
+1. Copy `.env.example` to `.env` in the project root
+2. Set your Web App URL:
+
+```
+VITE_SHEETS_API_URL=https://script.google.com/macros/s/YOUR_SCRIPT_ID/exec
+```
+
+3. Restart `npm run dev` so Vite picks up the change. For Vercel, add the same variable in the project settings.
+
+If `VITE_SHEETS_API_URL` is unset, the app runs in demo mode with mock data and accepts any email and password.
+
+## Step 7: Run Your Application
 
 1. Start your development server:
    ```bash
@@ -160,7 +183,7 @@ const API_URL = 'https://script.google.com/macros/s/YOUR_SCRIPT_ID/exec';
 
 2. Open the app in your browser (usually `http://localhost:5173`)
 
-3. Log in with any name
+3. Sign in with a reviewer email and password from Step 4
 
 4. You should see cards from your Google Sheet!
 
@@ -179,8 +202,13 @@ const API_URL = 'https://script.google.com/macros/s/YOUR_SCRIPT_ID/exec';
 - Verify that the Status column is empty for items you want to review
 - Check the browser console for error messages
 
+### "Invalid credentials" when signing in
+- Make sure the reviewer exists in the **Users** tab (add them via **SwipeReview > Add / update reviewer**)
+- Re-set the password from the menu if you're unsure of it
+- Make sure you redeployed the script as a **New version** after adding the `login` action
+
 ### Status not updating
-- Verify the POST request is being sent correctly
+- Verify the update request is being sent correctly (browser console logs the URL)
 - Check that the ID in your data matches the ID in the sheet
 - Look at the Apps Script execution logs: **Extensions > Apps Script > Executions**
 
@@ -206,7 +234,8 @@ The Web App URL will remain the same, so you don't need to update your frontend.
 ## Security Notes
 
 - The Web App URL is public, but it only accesses your specific Google Sheet
-- Consider adding authentication to the Apps Script if you need more security
+- Reviewer passwords are checked server-side and only salted hashes are stored in the **Users** tab; never put credentials in the frontend code
+- Login protects the app UI, but the fetch and update endpoints themselves are not token-protected, so anyone with the URL can still call them directly
 - Never commit your Web App URL to public repositories if your data is sensitive
 - You can revoke access anytime by going to **Deploy > Manage deployments > Archive**
 

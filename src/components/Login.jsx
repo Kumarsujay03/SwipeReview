@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { User, Lock, ArrowRight } from 'lucide-react';
+import { sheetsService, isMockMode } from '../services/sheets';
 import '../styles/Login.css';
 
 const Login = ({ onLogin }) => {
@@ -8,30 +9,18 @@ const Login = ({ onLogin }) => {
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
 
-    // Valid users
-    const USERS = [
-        { name: 'Sujay', email: 'reviewer@example.com', password: 'REDACTED' },
-        { name: 'Akshat', email: 'reviewer@example.com', password: 'REDACTED' }
-    ];
-
-    const handleSubmit = (e) => {
+    const handleSubmit = async (e) => {
         e.preventDefault();
         setError('');
         setLoading(true);
 
-        // Simulate API call
-        setTimeout(() => {
-            const user = USERS.find(u => u.email === email && u.password === password);
-
-            if (user) {
-                const userData = { name: user.name, email: user.email };
-                // localStorage.setItem('user', JSON.stringify(userData)); // Handled in App.jsx
-                onLogin(userData);
-            } else {
-                setError('Invalid credentials');
-                setLoading(false);
-            }
-        }, 1000);
+        try {
+            const user = await sheetsService.login(email.trim(), password);
+            onLogin({ name: user.name, email: user.email });
+        } catch (err) {
+            setError(err.message === 'Invalid credentials' ? 'Invalid credentials' : 'Sign in failed. Please try again.');
+            setLoading(false);
+        }
     };
 
     return (
@@ -40,6 +29,7 @@ const Login = ({ onLogin }) => {
                 <div className="login-header">
                     <h2>Welcome Back</h2>
                     <p>Sign in to continue reviewing</p>
+                    {isMockMode && <p>Demo mode: any email and password will work</p>}
                 </div>
 
                 <form onSubmit={handleSubmit} className="login-form">

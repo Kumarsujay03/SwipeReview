@@ -36,7 +36,9 @@ npm install
 
 ### 2. Set up the Google Sheets backend
 
-Follow the step-by-step guide in [`SHEETS_SETUP.md`](./SHEETS_SETUP.md). It walks you through creating the sheet, deploying `google-apps-script.js` as a web app, and getting your web app URL.
+Follow the step-by-step guide in [`SHEETS_SETUP.md`](./SHEETS_SETUP.md). It walks you through creating the sheet, deploying `google-apps-script.js` as a web app, adding reviewer accounts, and getting your web app URL.
+
+Reviewer accounts live in a `Users` tab of the same spreadsheet and are created from a **SwipeReview > Add / update reviewer** menu that the script adds. Only a salted password hash is stored, and sign-in is checked by the Apps Script backend, so no emails or passwords ship in the frontend bundle.
 
 ### 3. Configure the API URL
 
@@ -52,7 +54,7 @@ Then edit `.env`:
 VITE_SHEETS_API_URL=https://script.google.com/macros/s/XXXXXXXX/exec
 ```
 
-If you skip this step, the app runs against built-in mock data so you can still try the UI.
+If you skip this step, the app runs in demo mode against built-in mock data: any email and password will sign you in, so you can still try the UI.
 
 ### 4. Run locally
 
@@ -92,6 +94,7 @@ SHEETS_SETUP.md         Full backend setup guide
 ## Configuration Notes
 
 - The Google Apps Script web app URL is read from `VITE_SHEETS_API_URL` and is never committed to the repo.
+- Reviewer credentials are verified server-side by the Apps Script `login` action against the `Users` tab (salted, iterated SHA-256). Never hard-code credentials in the frontend: anything in `src/` ends up in the public bundle.
 - The deployed script is accessible to anyone with the URL, so treat the URL as a secret and only put non-sensitive content in the sheet. See the Security Notes in `SHEETS_SETUP.md`.
 
 ## License

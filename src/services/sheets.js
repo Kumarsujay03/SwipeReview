@@ -4,13 +4,44 @@
 // If unset, the app falls back to mock data (see SHEETS_SETUP.md).
 const API_URL = import.meta.env.VITE_SHEETS_API_URL || 'YOUR_GOOGLE_APPS_SCRIPT_URL_HERE';
 
+export const isMockMode = API_URL.includes('YOUR_GOOGLE_APPS_SCRIPT_URL_HERE');
+
 export const sheetsService = {
+    /**
+     * Verify reviewer credentials against the Users sheet via Apps Script.
+     * In mock mode any email/password is accepted so the UI can be tried out.
+     * @param {string} email
+     * @param {string} password
+     * @returns {Promise<{name: string, email: string}>} The signed-in user
+     */
+    async login(email, password) {
+        if (isMockMode) {
+            const name = email.split('@')[0] || 'Demo';
+            return { name: name.charAt(0).toUpperCase() + name.slice(1), email };
+        }
+
+        // POST with a text/plain body keeps the password out of the URL and
+        // avoids a CORS preflight, which Apps Script web apps don't answer.
+        const response = await fetch(API_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: JSON.stringify({ action: 'login', email, password })
+        });
+        const result = await response.json();
+
+        if (!result.success || !result.user) {
+            throw new Error(result.error || 'Invalid credentials');
+        }
+
+        return result.user;
+    },
+
     /**
      * Fetch pending rows (items without Status)
      * @returns {Promise<Array>} Array of pending items
      */
     async fetchRows() {
-        if (API_URL.includes('YOUR_GOOGLE_APPS_SCRIPT_URL_HERE')) {
+        if (isMockMode) {
             console.warn("⚠️ Google Apps Script URL not set. Using mock data.");
             console.warn("📖 Please follow SHEETS_SETUP.md to deploy your Apps Script and get the URL.");
             return this.mockFetch();
@@ -43,7 +74,7 @@ export const sheetsService = {
      * @returns {Promise<Array>} Array of processed items
      */
     async fetchHistory() {
-        if (API_URL.includes('YOUR_GOOGLE_APPS_SCRIPT_URL_HERE')) {
+        if (isMockMode) {
             console.warn("⚠️ Google Apps Script URL not set.");
             return [];
         }
@@ -79,7 +110,7 @@ export const sheetsService = {
      * @returns {Promise<void>}
      */
     async updateRowStatus(id, status, user, comment = '') {
-        if (API_URL.includes('YOUR_GOOGLE_APPS_SCRIPT_URL_HERE')) {
+        if (isMockMode) {
             console.log("Mock update:", { id, status, user: user.name, comment });
             return;
         }
