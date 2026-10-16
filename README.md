@@ -1,5 +1,7 @@
 # SwipeReview
 
+<p align="center"><img src="docs/banner.png" alt="SwipeReview banner" width="100%"></p>
+
 A Tinder-style content review app for approving and rejecting LinkedIn posts with swipe gestures. Content is pulled from a Google Sheet, and every decision (with the reviewer's name and optional comment) is written straight back to it. No dedicated backend to host, Google Apps Script does the work.
 
 ## Features
