@@ -38,7 +38,7 @@ npm install
 
 Follow the step-by-step guide in [`SHEETS_SETUP.md`](./SHEETS_SETUP.md). It walks you through creating the sheet, deploying `google-apps-script.js` as a web app, adding reviewer accounts, and getting your web app URL.
 
-Reviewer accounts live in a `Users` tab of the same spreadsheet and are created from a **SwipeReview > Add / update reviewer** menu that the script adds. Only a salted password hash is stored, and sign-in is checked by the Apps Script backend, so no emails or passwords ship in the frontend bundle.
+Reviewer accounts live in a `Users` tab of the same spreadsheet and are created from a **SwipeReview > Add / update reviewer** menu that the script adds. Only a salted password hash is stored, and sign-in is checked by the Apps Script backend, so no emails or passwords ship in the frontend bundle. A successful sign-in returns a signed session token (7-day expiry) that every fetch and update request must carry; generate its signing secret once from **SwipeReview > Generate session secret**.
 
 ### 3. Configure the API URL
 
@@ -95,7 +95,8 @@ SHEETS_SETUP.md         Full backend setup guide
 
 - The Google Apps Script web app URL is read from `VITE_SHEETS_API_URL` and is never committed to the repo.
 - Reviewer credentials are verified server-side by the Apps Script `login` action against the `Users` tab (salted, iterated SHA-256). Never hard-code credentials in the frontend: anything in `src/` ends up in the public bundle.
-- The deployed script is accessible to anyone with the URL, so treat the URL as a secret and only put non-sensitive content in the sheet. See the Security Notes in `SHEETS_SETUP.md`.
+- Fetch and update requests require a session token signed with a `SESSION_SECRET` kept in the script's Script Properties (never in the repo). Removing a reviewer from the `Users` tab revokes their access; regenerating the secret signs everyone out.
+- Keep the web app URL private anyway and only put non-sensitive content in the sheet. See the Security Notes in `SHEETS_SETUP.md`.
 
 ## License
 

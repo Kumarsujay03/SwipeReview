@@ -16,8 +16,9 @@ const Login = ({ onLogin }) => {
 
         try {
             const user = await sheetsService.login(email.trim(), password);
-            onLogin({ name: user.name, email: user.email });
+            onLogin(user);
         } catch (err) {
+            console.error('Sign in failed:', err);
             setError(err.message === 'Invalid credentials' ? 'Invalid credentials' : 'Sign in failed. Please try again.');
             setLoading(false);
         }

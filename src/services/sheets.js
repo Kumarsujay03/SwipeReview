@@ -6,13 +6,39 @@ const API_URL = import.meta.env.VITE_SHEETS_API_URL || 'YOUR_GOOGLE_APPS_SCRIPT_
 
 export const isMockMode = API_URL.includes('YOUR_GOOGLE_APPS_SCRIPT_URL_HERE');
 
+// Fired when the backend rejects the session token; App.jsx signs the user out.
+export const UNAUTHORIZED_EVENT = 'swipereview:unauthorized';
+
+/** Session token saved with the user in localStorage by App.jsx */
+const getToken = () => {
+    try {
+        return JSON.parse(localStorage.getItem('user'))?.token || '';
+    } catch {
+        return '';
+    }
+};
+
+/** Build a GET URL that carries the session token */
+const apiUrl = (params = {}) =>
+    `${API_URL}?${new URLSearchParams({ ...params, token: getToken() }).toString()}`;
+
+/** Returns true (and signals a sign-out) if the backend rejected the token */
+const isUnauthorized = (json) => {
+    if (json && json.code === 401) {
+        window.dispatchEvent(new Event(UNAUTHORIZED_EVENT));
+        return true;
+    }
+    return false;
+};
+
 export const sheetsService = {
     /**
      * Verify reviewer credentials against the Users sheet via Apps Script.
      * In mock mode any email/password is accepted so the UI can be tried out.
      * @param {string} email
      * @param {string} password
-     * @returns {Promise<{name: string, email: string}>} The signed-in user
+     * @returns {Promise<{name: string, email: string, token?: string, expiresAt?: number}>}
+     *   The signed-in user plus the session token used for later requests
      */
     async login(email, password) {
         if (isMockMode) {
@@ -29,11 +55,11 @@ export const sheetsService = {
         });
         const result = await response.json();
 
-        if (!result.success || !result.user) {
+        if (!result.success || !result.user || !result.token) {
             throw new Error(result.error || 'Invalid credentials');
         }
 
-        return result.user;
+        return { ...result.user, token: result.token, expiresAt: result.expiresAt };
     },
 
     /**
@@ -49,8 +75,10 @@ export const sheetsService = {
 
         try {
             // Fetch pending items (Status is empty)
-            const response = await fetch(API_URL);
+            const response = await fetch(apiUrl());
             const json = await response.json();
+
+            if (isUnauthorized(json)) return [];
 
             if (json.error) {
                 console.error("API Error:", json.error);
@@ -81,8 +109,10 @@ export const sheetsService = {
 
         try {
             // Fetch processed items (Status is NOT empty)
-            const response = await fetch(`${API_URL}?history=true`);
+            const response = await fetch(apiUrl({ history: 'true' }));
             const json = await response.json();
+
+            if (isUnauthorized(json)) return [];
 
             if (json.error) {
                 console.error("API Error:", json.error);
@@ -117,21 +147,23 @@ export const sheetsService = {
 
         try {
             // Use GET request with query parameters to avoid CORS preflight issues
-            const params = new URLSearchParams({
+            // The reviewer's name comes from the session token on the server
+            const url = apiUrl({
                 action: 'update',
                 id: id.toString(),
                 status: status,
-                userName: user.name,
                 comment: comment || ''
             });
-
-            const url = `${API_URL}?${params.toString()}`;
-            console.log("🔄 Updating status with URL:", url);
+            console.log("🔄 Updating status for row:", id);
 
             const response = await fetch(url);
             const result = await response.json();
 
             console.log("📥 Response from server:", result);
+
+            if (isUnauthorized(result)) {
+                throw new Error('Session expired. Please sign in again.');
+            }
 
             if (result.error) {
                 console.error("Update Error:", result.error);

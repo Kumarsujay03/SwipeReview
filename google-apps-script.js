@@ -15,9 +15,15 @@ function doGet(e) {
         })).setMimeType(ContentService.MimeType.JSON);
     }
 
+    // Every data request must carry a valid session token from login
+    const session = verifySessionToken(e.parameter.token);
+    if (!session) {
+        return jsonResponse({ error: 'Unauthorized', code: 401 });
+    }
+
     // Check if this is an update request
     if (e.parameter.action === 'update') {
-        return handleUpdate(sheet, e.parameter);
+        return handleUpdate(sheet, e.parameter, session);
     }
 
     // Otherwise, fetch data
@@ -76,18 +82,20 @@ function handleFetch(sheet, params) {
  * Handle update request
  * @param {Sheet} sheet - The sheet object
  * @param {Object} params - Query parameters
+ * @param {Object} session - Verified session from the token ({ name, email })
  * @returns {TextOutput} JSON response
  */
-function handleUpdate(sheet, params) {
+function handleUpdate(sheet, params, session) {
     try {
         const id = params.id;
         const status = params.status;
-        const userName = params.userName;
+        // Attribute the decision to the signed-in reviewer, not a client-supplied name
+        const userName = session.name;
         const comment = params.comment || '';
 
-        if (!id || !status || !userName) {
+        if (!id || !status) {
             return ContentService.createTextOutput(JSON.stringify({
-                error: 'Missing required fields: id, status, or userName'
+                error: 'Missing required fields: id or status'
             })).setMimeType(ContentService.MimeType.JSON);
         }
 
@@ -194,10 +202,85 @@ function handleLogin(body) {
         return jsonResponse({ error: 'Invalid credentials' });
     }
 
+    const secret = getSessionSecret();
+    if (!secret) {
+        return jsonResponse({ error: 'Server not configured: run "SwipeReview > Generate session secret"' });
+    }
+
+    const expiresAt = Date.now() + SESSION_TTL_MS;
     return jsonResponse({
         success: true,
-        user: { name: String(row[0]), email: email }
+        user: { name: String(row[0]), email: email },
+        token: createSessionToken(email, expiresAt, secret),
+        expiresAt: expiresAt
     });
+}
+
+// ---------------------------------------------------------------------------
+// Session tokens
+//
+// After login the client receives a token of the form
+//   base64url({"e": email, "x": expiresAtMs}) + "." + base64url(HMAC-SHA256)
+// signed with a secret stored in Script Properties (SESSION_SECRET), never in
+// code. Every fetch/update request must send it. Deleting a reviewer's row in
+// the Users tab revokes their access immediately; rotating the secret signs
+// everyone out.
+// ---------------------------------------------------------------------------
+
+const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+
+function getSessionSecret() {
+    return PropertiesService.getScriptProperties().getProperty('SESSION_SECRET');
+}
+
+function signPayload(payload, secret) {
+    return Utilities.base64EncodeWebSafe(
+        Utilities.computeHmacSha256Signature(payload, secret, Utilities.Charset.UTF_8));
+}
+
+function createSessionToken(email, expiresAt, secret) {
+    const payload = Utilities.base64EncodeWebSafe(
+        JSON.stringify({ e: email, x: expiresAt }), Utilities.Charset.UTF_8);
+    return payload + '.' + signPayload(payload, secret);
+}
+
+/**
+ * Verify a session token and return the reviewer it belongs to
+ * @param {string} token
+ * @returns {Object|null} { name, email } or null if invalid, expired or revoked
+ */
+function verifySessionToken(token) {
+    const secret = getSessionSecret();
+    if (!secret || !token) return null;
+
+    const parts = String(token).split('.');
+    if (parts.length !== 2) return null;
+    if (!constantTimeEquals(signPayload(parts[0], secret), parts[1])) return null;
+
+    let claims;
+    try {
+        claims = JSON.parse(Utilities.newBlob(Utilities.base64DecodeWebSafe(parts[0])).getDataAsString());
+    } catch (err) {
+        return null;
+    }
+    if (!claims || typeof claims.x !== 'number' || claims.x < Date.now()) return null;
+
+    // The reviewer must still exist, so removing their row revokes access
+    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(USERS_SHEET_NAME);
+    if (!sheet) return null;
+    const row = sheet.getDataRange().getValues().slice(1)
+        .find(r => String(r[1]).trim().toLowerCase() === claims.e);
+    return row ? { name: String(row[0]), email: claims.e } : null;
+}
+
+/**
+ * Creates (or replaces) the random secret used to sign session tokens.
+ * Replacing it signs every reviewer out.
+ */
+function generateSessionSecret() {
+    const secret = Utilities.getUuid() + Utilities.getUuid();
+    PropertiesService.getScriptProperties().setProperty('SESSION_SECRET', secret);
+    SpreadsheetApp.getUi().alert('Session secret generated. Any existing sessions are now signed out.');
 }
 
 /**
@@ -241,6 +324,7 @@ function onOpen() {
     SpreadsheetApp.getUi()
         .createMenu('SwipeReview')
         .addItem('Add / update reviewer', 'addOrUpdateReviewer')
+        .addItem('Generate session secret', 'generateSessionSecret')
         .addToUi();
 }
 

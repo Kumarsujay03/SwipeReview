@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import Login from './components/Login'
 import CardStack from './components/CardStack'
 import History from './components/History'
+import { isMockMode, UNAUTHORIZED_EVENT } from './services/sheets'
 import { History as HistoryIcon, Layers, LogOut } from 'lucide-react'
 import './index.css'
 
@@ -10,10 +11,30 @@ function App() {
   const [view, setView] = useState('stack'); // 'stack' or 'history'
 
   useEffect(() => {
-    const storedUser = localStorage.getItem('user');
-    if (storedUser) {
-      setUser(JSON.parse(storedUser));
+    let storedUser = null;
+    try {
+      storedUser = JSON.parse(localStorage.getItem('user'));
+    } catch {
+      storedUser = null;
     }
+    // Outside demo mode a stored user is only valid with an unexpired session token
+    const sessionValid = isMockMode ||
+      (storedUser?.token && (!storedUser.expiresAt || storedUser.expiresAt > Date.now()));
+    if (storedUser && sessionValid) {
+      setUser(storedUser);
+    } else {
+      localStorage.removeItem('user');
+    }
+  }, []);
+
+  useEffect(() => {
+    const onUnauthorized = () => {
+      localStorage.removeItem('user');
+      setUser(null);
+      setView('stack');
+    };
+    window.addEventListener(UNAUTHORIZED_EVENT, onUnauthorized);
+    return () => window.removeEventListener(UNAUTHORIZED_EVENT, onUnauthorized);
   }, []);
 
   const handleLogin = (userData) => {

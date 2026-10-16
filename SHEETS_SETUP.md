@@ -93,27 +93,46 @@ This guide will help you set up the Google Apps Script backend for your LinkedIn
 
 > **Note:** The script uses `getActiveSpreadsheet()` which means it automatically works with the spreadsheet it's attached to ("Content_calender" in your case). It then looks for the "Linkedin" sheet tab inside that spreadsheet.
 
-## Step 4: Add Reviewers
+## Step 4: Add Reviewers and the Session Secret
 
-Reviewers sign in with an email and password that the Apps Script checks against a **Users** tab. Passwords are never stored, only a random salt and a salted, iterated SHA-256 hash.
+Reviewers sign in with an email and password that the Apps Script checks against a **Users** tab. Passwords are never stored, only a random salt and a salted, iterated SHA-256 hash. After signing in, the app gets a session token that must accompany every fetch and update request.
 
 1. Reload your spreadsheet. A **SwipeReview** menu appears in the menu bar (added by the script's `onOpen` function).
-2. Click **SwipeReview** > **Add / update reviewer**. The first time, Google asks you to authorize the script.
-3. Enter the reviewer's name, email and a password of at least 10 characters.
-4. The script creates the **Users** tab if needed and writes `Name | Email | Salt | PasswordHash`. Running it again for an existing email replaces that reviewer's password.
+2. Click **SwipeReview** > **Generate session secret** (once). The first time, Google asks you to authorize the script. This stores a random `SESSION_SECRET` in the script's **Project Settings > Script Properties**, which signs session tokens. It never goes into code or the sheet.
+3. Click **SwipeReview** > **Add / update reviewer**.
+4. Enter the reviewer's name, email and a password of at least 10 characters.
+5. The script creates the **Users** tab if needed and writes `Name | Email | Salt | PasswordHash`. Running it again for an existing email replaces that reviewer's password.
 
-Repeat for each reviewer, then share each password with its reviewer through a private channel.
+Repeat steps 3-5 for each reviewer, then share each password with its reviewer through a private channel.
 
 > **Notes**
-> - To remove a reviewer, delete their row in the **Users** tab.
+> - Sessions last 7 days, after which the app asks the reviewer to sign in again.
+> - To remove a reviewer, delete their row in the **Users** tab. Their existing session stops working on the next request.
+> - To sign everyone out (for example, if a token may have leaked), run **Generate session secret** again.
 > - Anyone with access to the spreadsheet can see the hashes, so only share the spreadsheet with people you trust. Don't edit the Salt or PasswordHash cells by hand.
-> - If you changed the script, redeploy it (see "Updating the Script") so the web app picks up the `login` action.
+> - If you changed the script, redeploy it (see "Updating the Script") so the web app picks up the changes.
 
 ## Step 5: Test the API
 
-### Test GET Request (Fetch Pending Items)
+### Test Login
 
-Open a new browser tab and paste your Web App URL. You should see a JSON response like:
+Login is a POST request so the password stays out of the URL. Replace the email and password with a reviewer you added in Step 4 (run this only on your own machine, since the password ends up in your shell history):
+
+```bash
+curl -L "YOUR_WEB_APP_URL" -H "Content-Type: text/plain" -d '{"action":"login","email":"reviewer@example.com","password":"..."}'
+```
+
+A correct password returns `{"success":true,"user":{...},"token":"...","expiresAt":...}`; anything else returns `{"error":"Invalid credentials"}`. Copy the `token` value for the next tests.
+
+### Test Fetch Pending Items
+
+Open a new browser tab with your Web App URL plus the token:
+
+```
+https://script.google.com/macros/s/YOUR_SCRIPT_ID/exec?token=YOUR_TOKEN
+```
+
+You should see a JSON response like:
 
 ```json
 {
@@ -130,36 +149,28 @@ Open a new browser tab and paste your Web App URL. You should see a JSON respons
 }
 ```
 
-### Test GET Request (Fetch History)
+Without a valid token (or once it expires), every request returns `{"error":"Unauthorized","code":401}`.
 
-Add `?history=true` to your URL:
+### Test Fetch History
+
+Add `history=true`:
 ```
-https://script.google.com/macros/s/YOUR_SCRIPT_ID/exec?history=true
+https://script.google.com/macros/s/YOUR_SCRIPT_ID/exec?history=true&token=YOUR_TOKEN
 ```
 
 This should return an empty array `{"data": []}` if you haven't processed any items yet.
 
 ### Test Update Request
 
-Status updates are sent as GET requests with `action=update`:
+Status updates are sent as GET requests with `action=update`. The reviewer name is taken from the token, not from the request:
 
 ```
-https://script.google.com/macros/s/YOUR_SCRIPT_ID/exec?action=update&id=1&status=Approved&userName=John%20Doe&comment=Great%20content!
+https://script.google.com/macros/s/YOUR_SCRIPT_ID/exec?action=update&id=1&status=Approved&comment=Great%20content!&token=YOUR_TOKEN
 ```
 
 After this, check your Google Sheet - the row with ID 1 should now have:
-- Status: "Approved by John Doe"
+- Status: "Approved by <reviewer name>"
 - Comment: "Great content!"
-
-### Test Login
-
-Login is a POST request so the password stays out of the URL. Replace the email and password with a reviewer you added in Step 4 (run this only on your own machine, since the password ends up in your shell history):
-
-```bash
-curl -L "YOUR_WEB_APP_URL" -H "Content-Type: text/plain" -d '{"action":"login","email":"reviewer@example.com","password":"..."}'
-```
-
-A correct password returns `{"success":true,"user":{...}}`; anything else returns `{"error":"Invalid credentials"}`.
 
 ## Step 6: Configure Your Frontend
 
@@ -202,6 +213,13 @@ If `VITE_SHEETS_API_URL` is unset, the app runs in demo mode with mock data and 
 - Verify that the Status column is empty for items you want to review
 - Check the browser console for error messages
 
+### "Server not configured" or "Sign in failed" when signing in
+- Run **SwipeReview > Generate session secret** in the spreadsheet, then try again
+
+### Signed out right after signing in, or "Unauthorized" responses
+- The session token expired or the secret was regenerated: sign in again
+- Check the reviewer still has a row in the **Users** tab
+
 ### "Invalid credentials" when signing in
 - Make sure the reviewer exists in the **Users** tab (add them via **SwipeReview > Add / update reviewer**)
 - Re-set the password from the menu if you're unsure of it
@@ -235,7 +253,8 @@ The Web App URL will remain the same, so you don't need to update your frontend.
 
 - The Web App URL is public, but it only accesses your specific Google Sheet
 - Reviewer passwords are checked server-side and only salted hashes are stored in the **Users** tab; never put credentials in the frontend code
-- Login protects the app UI, but the fetch and update endpoints themselves are not token-protected, so anyone with the URL can still call them directly
+- Every fetch and update request must carry a session token signed with `SESSION_SECRET` (HMAC-SHA256). Requests without a valid, unexpired token, or from a reviewer no longer in the **Users** tab, get `Unauthorized`
+- Tokens travel in the query string (GET avoids CORS preflight), so they can appear in browser history. They expire after 7 days, and you can revoke all of them by regenerating the secret
 - Never commit your Web App URL to public repositories if your data is sensitive
 - You can revoke access anytime by going to **Deploy > Manage deployments > Archive**
 
